@@ -32,3 +32,16 @@ class EnrichedArticle(BaseModel):
     article: PubMedArticle
     summary: Optional[ArticleSummary] = None
     processed_at: date = Field(default_factory=date.today)
+
+class SearchConfig(BaseModel):
+    """
+    Représente une ligne de configuration dans l'onglet _ADMIN_CONFIG.
+    """
+    active: bool = True
+    name: str  # Nom de l'onglet de destination
+    query: str
+    max_results: int = Field(default=10, ge=1)
+    # Paramètres temporels (ADR-008)
+    days_back: Optional[int] = None # Jours récents
+    start_date: Optional[str] = None # Format YYYY/MM/DD
+    end_date: Optional[str] = None   # Format YYYY/MM/DD

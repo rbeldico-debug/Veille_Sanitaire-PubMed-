@@ -3,6 +3,7 @@ from langchain_ollama import ChatOllama  # <-- NOUVEL IMPORT (V2)
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
+from src.logger import logger
 from src.config import settings
 from src.domain.models import PubMedArticle, ArticleSummary
 
@@ -23,7 +24,7 @@ class OllamaClient:
 
     def summarize_article(self, article: PubMedArticle) -> ArticleSummary:
         print(f"   Analysé par IA ({settings.OLLAMA_MODEL}) : {article.title[:50]}...")
-
+        logger.debug(f"🤖 Analyse IA en cours : {article.title[:30]}...")
         # CORRECTION CRITIQUE ICI :
         # Les accolades du JSON exemple doivent être doublées {{ }}
         # sinon LangChain pense que ce sont des variables à remplacer.

@@ -1,72 +1,83 @@
-from typing import List
-from src.domain.models import EnrichedArticle
 from src.infra.pubmed_client import PubMedClient
 from src.infra.ai_client import OllamaClient
 from src.infra.gsheets_repo import GoogleSheetsRepository
+from src.domain.models import EnrichedArticle
+from src.logger import logger
 
 
 class SanitaryWatcher:
-    """
-    Orchestrateur principal de la veille sanitaire.
-    Coordonne PubMed, l'IA et Google Sheets.
-    """
-
     def __init__(self):
-        # Initialisation des 3 dépendances d'infrastructure
-        print("Initialisation des services...")
+        logger.info("--- Initialisation des services ---")
         self.pubmed_client = PubMedClient()
         self.ai_client = OllamaClient()
         self.repo = GoogleSheetsRepository()
 
-    def run_process(self, query: str, max_results: int = 10):
+    def run_all_watches(self):
         """
-        Exécute le workflow complet de veille.
+        Lit la configuration et exécute toutes les veilles actives.
         """
-        print(f"\n=== Lancement de la veille pour '{query}' ===")
+        # 1. Lecture de la config centralisée
+        configs = self.repo.get_configs()
 
-        # ÉTAPE 1 : Récupérer ce qu'on connait déjà (Cache)
-        print("1. Lecture de la base de données existante...")
+        if not configs:
+            logger.warning("Aucune configuration active trouvée. Fin du programme.")
+            return
+
+        logger.info(f"🚀 Démarrage de la séquence : {len(configs)} veilles à traiter.")
+
+        # 2. Boucle sur chaque ligne de configuration
+        for config in configs:
+            try:
+                self._process_single_watch(config)
+            except Exception as e:
+                # ADR-009 : On log l'erreur mais on continue à la veille suivante
+                logger.error(f"❌ CRASH CRITIQUE sur la veille '{config.name}' : {e}")
+                continue
+
+    def _process_single_watch(self, config):
+        """
+        Traite une seule veille de A à Z.
+        """
+        logger.info(f"\n=== Traitement Veille : {config.name} ===")
+
+        # A. Préparer l'onglet Google Sheet
+        self.repo.set_target_tab(config.name)
+
+        # B. Récupérer le cache (IDs déjà traités dans CET onglet)
         existing_ids = self.repo.get_existing_pmids()
-        print(f"   -> {len(existing_ids)} articles déjà stockés.")
 
-        # ÉTAPE 2 : Chercher les IDs récents sur PubMed
-        print(f"2. Recherche des derniers articles sur PubMed (max {max_results})...")
-        found_ids = self.pubmed_client.search_article_ids(query, max_results)
+        # C. Recherche PubMed (Hybride : Query + Dates)
+        found_ids = self.pubmed_client.search_article_ids(
+            query=config.query,
+            max_results=config.max_results,
+            reldate=config.days_back,
+            mindate=config.start_date,
+            maxdate=config.end_date
+        )
 
-        # ÉTAPE 3 : Filtrage (Logique de dédoublonnement)
-        # On garde l'ID seulement s'il N'EST PAS dans existing_ids
+        # D. Filtrage
         new_ids = [pmid for pmid in found_ids if pmid not in existing_ids]
 
         if not new_ids:
-            print("\n✅ Aucune nouveauté détectée. Tout est à jour.")
+            logger.info(f"✅ {config.name} : Rien de nouveau.")
             return
 
-        print(f"   -> {len(new_ids)} nouveaux articles identifiés à traiter.")
+        logger.info(f"⚡ {len(new_ids)} nouveaux articles à traiter.")
 
-        # ÉTAPE 4 : Récupération des détails (XML) pour les nouveaux seulement
-        articles_to_process = self.pubmed_client.fetch_article_details(new_ids)
+        # E. Récupération & Analyse
+        articles = self.pubmed_client.fetch_article_details(new_ids)
 
-        # ÉTAPE 5 : Boucle de traitement (IA + Sauvegarde)
-        print(f"\n3. Analyse IA et Sauvegarde ({len(articles_to_process)} articles)...")
-
-        count_success = 0
-        for i, article in enumerate(articles_to_process, 1):
-            print(f"\n--- Traitement {i}/{len(articles_to_process)} : PMID {article.pubmed_id} ---")
+        count = 0
+        for art in articles:
             try:
-                # A. Résumé IA
-                summary = self.ai_client.summarize_article(article)
-
-                # B. Création de l'objet enrichi
-                enriched = EnrichedArticle(article=article, summary=summary)
-
-                # C. Sauvegarde immédiate (comme ça si ça plante au 10ème, les 9 premiers sont sauvés)
+                summary = self.ai_client.summarize_article(art)
+                enriched = EnrichedArticle(article=art, summary=summary)
                 self.repo.save_article(enriched)
-                count_success += 1
-
+                count += 1
             except Exception as e:
-                print(f"❌ Erreur sur l'article {article.pubmed_id} : {e}")
+                logger.error(f"Erreur article {art.pubmed_id} : {e}")
 
-        if count_success > 0:
+        # F. Formatage final
+        if count > 0:
             self.repo.update_layout()
-
-        print(f"\n=== Terminé : {count_success} articles ajoutés au Google Sheet. ===")
+            logger.info(f"✅ Terminé pour {config.name} : {count} articles ajoutés.")

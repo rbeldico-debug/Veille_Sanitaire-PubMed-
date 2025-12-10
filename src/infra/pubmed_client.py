@@ -3,6 +3,7 @@ from datetime import date
 from Bio import Entrez
 from src.config import settings
 from src.domain.models import PubMedArticle
+from src.logger import logger
 
 
 class PubMedClient:
@@ -17,29 +18,48 @@ class PubMedClient:
         Entrez.email = settings.PUBMED_EMAIL
         Entrez.tool = settings.PUBMED_TOOL
 
-    def search_article_ids(self, query: str, max_results: int = 5) -> List[str]:
+    def search_article_ids(self, query: str, max_results: int = 5,
+                           reldate: Optional[int] = None,
+                           mindate: Optional[str] = None,
+                           maxdate: Optional[str] = None) -> List[str]:
         """
-        Équivalent du Noeud n8n 'HTTP Request (esearch)'.
-        Récupère uniquement les PMIDs correspondant à la requête.
+        Recherche hybride : Mots-clés + Dates (ADR-008).
+        Priorité : reldate > mindate/maxdate.
         """
         try:
-            print(f"Recherche PubMed (IDs) pour : '{query}'...")
-            search_handle = Entrez.esearch(
-                db="pubmed",
-                term=query,
-                retmax=max_results,
-                sort="date",
-                retmode="xml"
-            )
+            params = {
+                "db": "pubmed",
+                "term": query,
+                "retmax": max_results,
+                "sort": "date",
+                "retmode": "xml"
+            }
+
+            # Gestion des dates (ADR-008)
+            date_info = ""
+            if reldate:
+                params["reldate"] = reldate
+                params["datetype"] = "pdat"  # Date de publication
+                date_info = f"(Derniers {reldate} jours)"
+            elif mindate and maxdate:
+                params["mindate"] = mindate
+                params["maxdate"] = maxdate
+                params["datetype"] = "pdat"
+                date_info = f"({mindate} -> {maxdate})"
+
+            logger.info(f"🔎 Recherche PubMed : '{query}' {date_info}")
+
+            # Appel API avec unpack des arguments (**params)
+            search_handle = Entrez.esearch(**params)
             search_results = Entrez.read(search_handle)
             search_handle.close()
 
             id_list = search_results["IdList"]
-            print(f"-> {len(id_list)} IDs trouvés.")
+            logger.info(f"   -> {len(id_list)} IDs trouvés.")
             return id_list
 
         except Exception as e:
-            print(f"Erreur lors de la recherche IDs : {e}")
+            logger.error(f"❌ Erreur lors de la recherche IDs : {e}")
             return []
 
     def fetch_article_details(self, id_list: List[str]) -> List[PubMedArticle]:
