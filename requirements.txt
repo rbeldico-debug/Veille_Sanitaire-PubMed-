@@ -1,0 +1,21 @@
+# requirements.txt
+# ADR-002 : Validation des données
+pydantic>=2.*
+pydantic-settings>=2.*
+
+# ADR-003 : Interaction PubMed
+biopython>=1.*
+
+# ADR-004 : Interaction LLM (via LangChain pour abstraction)
+langchain>=0.1.*
+langchain-community>=0.0.*
+# Si vous utilisez Ollama en local
+ollama>=0.1.*
+langchain-ollama>=0.1.*
+
+# ADR-005 : Google Sheets
+gspread>=6.*
+google-auth>=2.*
+
+# Gestion des variables d'environnement (.env)
+python-dotenv>=1.*

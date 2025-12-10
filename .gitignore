@@ -1,0 +1,8 @@
+# .gitignore
+__pycache__/
+*.py[cod]
+.env
+google_credentials.json
+.venv/
+.idea/
+data/
