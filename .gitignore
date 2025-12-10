@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 .env
 google_credentials.json
+execution.log
 .venv/
 .idea/
 data/
+/execution.log
